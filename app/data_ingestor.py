@@ -1,9 +1,11 @@
 import os
 import json
+import pandas
 
 class DataIngestor:
     def __init__(self, csv_path: str):
         # TODO: Read csv from csv_path
+        self.csvFile = pandas.read_csv(csv_path)
 
         self.questions_best_is_min = [
             'Percent of adults aged 18 years and older who have an overweight classification',
