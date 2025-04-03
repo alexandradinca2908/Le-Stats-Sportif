@@ -92,25 +92,23 @@ class TaskRunner(Thread):
             elif task['task'] == 'state_mean':
                 self.state_mean(task)
             elif task['task'] == 'best5':
-                pass
+                self.best5(task)
             elif task['task'] == 'worst5':
-                pass
+                self.worst5(task)
             elif task['task'] == 'global_mean':
-                pass
+                self.global_mean(task)
             elif task['task'] == 'diff_from_mean':
-                pass
+                self.diff_from_mean(task)
             elif task['task'] == 'state_diff_from_mean':
-                pass
+                self.state_diff_from_mean(task)
             elif task['task'] == 'mean_by_category':
-                pass
+                self.mean_by_category(task)
             elif task['task'] == 'state_mean_by_category':
                 pass
             elif task['task'] == 'diff_from_mean':
                 pass
 
-        print("done\n")
-
-    def states_mean(self, task):
+    def states_mean(self, task, write = True):
         #  Dictionary for all states
         #  states[state] = (sum of values, nr of values)
         states = {}
@@ -145,15 +143,14 @@ class TaskRunner(Thread):
         result_list = dict(sorted(result_list, key = lambda x : x[1]))
 
         #  Write output in result file
-        filename = RESULTS_PATH + str(task['job_id']) + '.json'
-        with open(filename, 'w') as file:
-            file.write(json.dumps(result_list))
+        if write:
+            filename = RESULTS_PATH + str(task['job_id']) + '.json'
+            with open(filename, 'w') as file:
+                file.write(json.dumps(result_list))
+        else:
+            return result_list
 
-    def state_mean(self, task):
-        #  Dictionary for all states
-        #  states[state] = (sum of values, nr of values)
-        states = {}
-
+    def state_mean(self, task, write = True):
         #  Extract only needed rows
         csvFile = self.thread_pool.webserver.data_ingestor.csvFile
         filtered_csv = csvFile[(csvFile['Question'] == task['question']) &
@@ -175,6 +172,102 @@ class TaskRunner(Thread):
         result = {task['state']: sum_of_values / nr_of_values}
 
         #  Write output in result file
-        filename = RESULTS_PATH + str(task['job_id']) + '.json'
-        with open(filename, 'w') as file:
-            file.write(json.dumps(result))
+        if write:
+            filename = RESULTS_PATH + str(task['job_id']) + '.json'
+            with open(filename, 'w') as file:
+                file.write(json.dumps(result))
+        else:
+            return result
+
+    def best5(self, task, write = True):
+        #  Generate all results
+        full_result = self.states_mean(task, write = False)
+
+        #  Extract first 5
+        best5 = {k: full_result[k] for k in list(full_result)[:5]}
+
+        #  Write output in result file
+        if write:
+            filename = RESULTS_PATH + str(task['job_id']) + '.json'
+            with open(filename, 'w') as file:
+                file.write(json.dumps(best5))
+        else:
+            return best5
+    
+    def worst5(self, task, write = True):
+        #  Generate all results
+        full_result = self.states_mean(task, write = False)
+
+        #  Extract last 5
+        start = len(full_result) - 6
+        end = len(full_result)
+        worst5 = {k: full_result[k] for k in list(full_result)[end:start:-1]}
+
+        #  Write output in result file
+        if write:
+            filename = RESULTS_PATH + str(task['job_id']) + '.json'
+            with open(filename, 'w') as file:
+                file.write(json.dumps(worst5))
+        else:
+            return worst5
+
+    def global_mean(self, task, write = True):
+        #  Extract only needed rows
+        csvFile = self.thread_pool.webserver.data_ingestor.csvFile
+        filtered_csv = csvFile[csvFile['Question'] == task['question']]
+
+        values = (0, 0)
+
+        for _, row in filtered_csv.iterrows():
+            #  Add new data
+            tuple1 = values
+            tuple2 = (row['Data_Value'], 1)
+
+            values = tuple(sum(x) for x in zip(tuple1, tuple2))
+
+        #  Calculate the mean values
+        sum_of_values = values[0]
+        nr_of_values = values[1]
+
+        result = {'global_mean': sum_of_values / nr_of_values}
+
+        #  Write output in result file
+        if write:
+            filename = RESULTS_PATH + str(task['job_id']) + '.json'
+            with open(filename, 'w') as file:
+                file.write(json.dumps(result))
+        else:
+            return result
+
+    def diff_from_mean(self, task, write = True):
+        states_mean = self.states_mean(task, write = False)
+        global_mean = self.global_mean(task, write = False)['global_mean']
+
+        for state in states_mean:
+            states_mean[state] = global_mean - states_mean[state]
+
+        #  Write output in result file
+        if write:
+            filename = RESULTS_PATH + str(task['job_id']) + '.json'
+            with open(filename, 'w') as file:
+                file.write(json.dumps(states_mean))
+        else:
+            return states_mean
+    
+    def state_diff_from_mean(self, task, write = True):
+        state_mean = self.state_mean(task, write = False)
+        global_mean = self.global_mean(task, write = False)['global_mean']
+        state = task['state']
+
+        state_mean[state] = global_mean - state_mean[state]
+
+        #  Write output in result file
+        if write:
+            filename = RESULTS_PATH + str(task['job_id']) + '.json'
+            with open(filename, 'w') as file:
+                file.write(json.dumps(state_mean))
+        else:
+            return state_mean
+
+    def mean_by_category(self, task, write = True):
+        pass
