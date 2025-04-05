@@ -14,57 +14,74 @@ class ThreadPool:
         # Otherwise, you are to use what the hardware concurrency allows
         # Note: the TP_NUM_OF_THREADS env var will be defined by the checker
 
-        #  Webserver
+        # Webserver
         self.webserver = webserver
 
-        #  Number of threads in threadpool
+        # Number of threads in threadpool
         self.num_of_threads = int(os.environ.get('TP_NUM_OF_THREADS', multiprocessing.cpu_count()))
 
-        #  Thread pool
+        # Thread pool
         self.threads = []
         for i in range(self.num_of_threads):
             self.threads.append(TaskRunner(i, self))
-        
-        #  Task queue
+
+        # Active tasks
+        self.active_tasks = 0
+
+        # Task queue
         self.task_queue = Queue()
-    
-        #  Events
+
+        # Events
         self.data_ingestor_complete = Event()
         self.server_running = Event()
         self.server_running.set()
-    
-        #  Semaphore
+
+        # Semaphore
         self.task_barrier = Semaphore(0)
 
-        #  Locks
+        # Locks
         self.task_queue_lock = Lock()
         self.data_ingestor_lock = Lock()
-        self.results_lock = Lock()
+        self.active_tasks_lock = Lock()
 
-    #  Starts thread pool
-    def start(self):
-        for i in range(self.num_of_threads):
-            self.threads[i].start()
-    
-    #  Stops waits for threads to finish and closes server
-    def stop(self):
-        pass
-
-    #  Notifies thread that they can start processing requests
+    # Notifies thread that they can start processing requests
     def set_data_ingestor(self):
         self.data_ingestor_complete.set()
 
-    #  Add task to queue if server still accepts jobs
-    #  When receiving graceful_shutdown, send it to all threads
+    # Returns active tasks
+    def get_active_tasks(self):
+        with self.active_tasks_lock:
+            return self.active_tasks
+
+    # Returns server status
+    def get_server_status(self):
+        return self.server_running.is_set()
+
+    # Starts thread pool
+    def start(self):
+        for i in range(self.num_of_threads):
+            self.threads[i].start()
+
+    # Notifies the threads to finish by adding a stop task for each thread
+    def stop(self, task):
+        for _ in range(self.num_of_threads):
+            self.task_queue.put(task)
+            self.task_barrier.release()
+            self.server_running.clear()
+
+    # Add task to queue
+    # For graceful_shutdown, activate stop
+    # For normal task, notify threads and increment active tasks counter
     def submit_task(self, task):
         if self.server_running.is_set():
             if task['task'] == 'graceful_shutdown':
-                for i in range(self.num_of_threads):
-                    self.task_queue.put(task)
-                    self.task_barrier.release()
+                self.stop(task)
             else:
-                self.task_queue.put(task)                
+                self.task_queue.put(task)
                 self.task_barrier.release()
+
+                with self.active_tasks_lock:
+                    self.active_tasks += 1
 
 class TaskRunner(Thread):
     def __init__(self, id, thread_pool):
@@ -73,21 +90,22 @@ class TaskRunner(Thread):
         self.thread_pool = thread_pool
 
     def run(self):
-        #  Wait until CSV is loaded
+        # Wait until CSV is loaded
         self.thread_pool.data_ingestor_complete.wait()
 
         while True:
-            #  Wait for a task
+            # Wait for a task
             self.thread_pool.task_barrier.acquire()
 
-            #  Get pending task
-            task = self.thread_pool.task_queue.get()                
+            # Get pending task
+            task = self.thread_pool.task_queue.get()
 
-            #  Execute the task and save the result to disk
-            #  Repeat until graceful_shutdown
+            # Execute the task and save the result to disk
+            # Repeat until graceful_shutdown
             if task['task'] == 'graceful_shutdown':
                 break
-            elif task['task'] == 'states_mean':
+            
+            if task['task'] == 'states_mean':
                 self.states_mean(task)
             elif task['task'] == 'state_mean':
                 self.state_mean(task)
@@ -106,30 +124,34 @@ class TaskRunner(Thread):
             elif task['task'] == 'state_mean_by_category':
                 self.state_mean_by_category(task)
 
+            # Decrement active tasks counter
+            with self.thread_pool.active_tasks_lock:
+                self.thread_pool.active_tasks -= 1
+
     def states_mean(self, task, write = True):
-        #  Dictionary for all states
-        #  states[state] = (sum of values, nr of values)
+        # Dictionary for all states
+        # states[state] = (sum of values, nr of values)
         states = {}
 
-        #  Extract only needed rows
-        csvFile = self.thread_pool.webserver.data_ingestor.csvFile
-        filtered_csv = csvFile[csvFile['Question'] == task['question']]
+        # Extract only needed rows
+        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        filtered_csv = csv_file[csv_file['Question'] == task['question']]
 
         for _, row in filtered_csv.iterrows():
-            #  Take state
+            # Take state
             state = row['LocationDesc']
 
-            #  Add new data
+            # Add new data
             if state not in states:
                 states[state] = (row['Data_Value'], 1)
-            #  Add data to existing data
+            # Add data to existing data
             else:
                 tuple1 = states[state]
                 tuple2 = (row['Data_Value'], 1)
-    
+
                 states[state] = tuple(sum(x) for x in zip(tuple1, tuple2))
-        
-        #  Take all states and calculate the mean values
+
+        # Take all states and calculate the mean values
         result_list = []
         for state in states:
             sum_of_values = states[state][0]
@@ -137,33 +159,33 @@ class TaskRunner(Thread):
 
             result_list.append((state, sum_of_values / nr_of_values))
 
-        #  Sort values by mean value
+        # Sort values by mean value
         result_list = dict(sorted(result_list, key = lambda x : x[1]))
 
-        #  Write output in result file
+        # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
             with open(filename, 'w') as file:
                 file.write(json.dumps(result_list))
-        else:
-            return result_list
+            
+        return result_list
 
     def state_mean(self, task, write = True):
-        #  Extract only needed rows
-        csvFile = self.thread_pool.webserver.data_ingestor.csvFile
-        filtered_csv = csvFile[(csvFile['Question'] == task['question']) &
-                               (csvFile['LocationDesc'] == task['state'])]
+        # Extract only needed rows
+        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        filtered_csv = csv_file[(csv_file['Question'] == task['question']) &
+                               (csv_file['LocationDesc'] == task['state'])]
 
         state = (0, 0)
 
         for _, row in filtered_csv.iterrows():
-            #  Add new data
+            # Add new data
             tuple1 = state
             tuple2 = (row['Data_Value'], 1)
 
             state = tuple(sum(x) for x in zip(tuple1, tuple2))
 
-        #  Calculate the mean values
+        # Calculate the mean values
         sum_of_values = state[0]
         nr_of_values = state[1]
 
@@ -173,73 +195,73 @@ class TaskRunner(Thread):
         print(nr_of_values)
         print(result[task['state']])
 
-        #  Write output in result file
+        # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
             with open(filename, 'w') as file:
                 file.write(json.dumps(result))
-        else:
-            return result
+            
+        return result
 
     def best5(self, task, write = True):
-        #  Generate all results
+        # Generate all results
         full_result = self.states_mean(task, write = False)
 
-        #  Extract first 5
+        # Extract first 5
         best5 = {k: full_result[k] for k in list(full_result)[:5]}
 
-        #  Write output in result file
+        # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
             with open(filename, 'w') as file:
                 file.write(json.dumps(best5))
-        else:
-            return best5
-    
+
+        return best5
+
     def worst5(self, task, write = True):
-        #  Generate all results
+        # Generate all results
         full_result = self.states_mean(task, write = False)
 
-        #  Extract last 5
+        # Extract last 5
         start = len(full_result) - 6
         end = len(full_result)
         worst5 = {k: full_result[k] for k in list(full_result)[end:start:-1]}
 
-        #  Write output in result file
+        # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
             with open(filename, 'w') as file:
                 file.write(json.dumps(worst5))
-        else:
-            return worst5
+
+        return worst5
 
     def global_mean(self, task, write = True):
-        #  Extract only needed rows
-        csvFile = self.thread_pool.webserver.data_ingestor.csvFile
-        filtered_csv = csvFile[csvFile['Question'] == task['question']]
+        # Extract only needed rows
+        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        filtered_csv = csv_file[csv_file['Question'] == task['question']]
 
         values = (0, 0)
 
         for _, row in filtered_csv.iterrows():
-            #  Add new data
+            # Add new data
             tuple1 = values
             tuple2 = (row['Data_Value'], 1)
 
             values = tuple(sum(x) for x in zip(tuple1, tuple2))
 
-        #  Calculate the mean values
+        # Calculate the mean values
         sum_of_values = values[0]
         nr_of_values = values[1]
 
         result = {'global_mean': sum_of_values / nr_of_values}
 
-        #  Write output in result file
+        # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
             with open(filename, 'w') as file:
                 file.write(json.dumps(result))
-        else:
-            return result
+
+        return result
 
     def diff_from_mean(self, task, write = True):
         states_mean = self.states_mean(task, write = False)
@@ -248,14 +270,14 @@ class TaskRunner(Thread):
         for state in states_mean:
             states_mean[state] = global_mean - states_mean[state]
 
-        #  Write output in result file
+        # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
             with open(filename, 'w') as file:
                 file.write(json.dumps(states_mean))
-        else:
-            return states_mean
-    
+
+        return states_mean
+
     def state_diff_from_mean(self, task, write = True):
         state_mean = self.state_mean(task, write = False)
         global_mean = self.global_mean(task, write = False)['global_mean']
@@ -263,39 +285,39 @@ class TaskRunner(Thread):
 
         state_mean[state] = global_mean - state_mean[state]
 
-        #  Write output in result file
+        # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
             with open(filename, 'w') as file:
                 file.write(json.dumps(state_mean))
-        else:
-            return state_mean
+            
+        return state_mean
 
     def mean_by_category(self, task, write = True):
-        #  Dictionary for all states
-        #  states[state] = (sum of values, nr of values)
+        # Dictionary for all states
+        # states[state] = (sum of values, nr of values)
         states = {}
 
-        #  Extract only needed rows
-        csvFile = self.thread_pool.webserver.data_ingestor.csvFile
-        filtered_csv = csvFile[csvFile['Question'] == task['question']]
+        # Extract only needed rows
+        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        filtered_csv = csv_file[csv_file['Question'] == task['question']]
 
         for _, row in filtered_csv.iterrows():
-            #  Take state
-            state = (row['LocationDesc'], row['StratificationCategory1'], 
+            # Take state
+            state = (row['LocationDesc'], row['StratificationCategory1'],
                     row['Stratification1'])
 
-            #  Add new data
+            # Add new data
             if state not in states:
                 states[state] = (row['Data_Value'], 1)
-            #  Add data to existing data
+            # Add data to existing data
             else:
                 tuple1 = states[state]
                 tuple2 = (row['Data_Value'], 1)
-    
+
                 states[state] = tuple(sum(x) for x in zip(tuple1, tuple2))
-        
-        #  Take all states and calculate the mean values
+
+        # Take all states and calculate the mean values
         result_list = []
         for state in states:
             sum_of_values = states[state][0]
@@ -303,48 +325,48 @@ class TaskRunner(Thread):
 
             result_list.append((state, sum_of_values / nr_of_values))
 
-        #  Sort values by state name, stratification category and stratification
+        # Sort values by state name, stratification category and stratification
         result_list = dict(sorted(result_list, key = lambda x : (x[0][0], x[0][1], x[0][2])))
 
-        #  Replace tuple keys with string keys
+        # Replace tuple keys with string keys
         final_result = {}
         for result in result_list:
             key = '(\'' + result[0] + '\', \'' + result[1] + '\', \'' + result[2] + '\')'
             final_result[key] = result_list[result]
 
-        #  Write output in result file
+        # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
             with open(filename, 'w') as file:
                 file.write(json.dumps(final_result))
-        else:
-            return result_list
-        
+
+        return result_list
+
     def state_mean_by_category(self, task, write = True):
-        #  Dictionary for all states
-        #  states[state] = (sum of values, nr of values)
+        # Dictionary for all states
+        # states[state] = (sum of values, nr of values)
         states = {}
 
-        #  Extract only needed rows
-        csvFile = self.thread_pool.webserver.data_ingestor.csvFile
-        filtered_csv = csvFile[(csvFile['Question'] == task['question']) &
-                                (csvFile['LocationDesc'] == task['state'])]
+        # Extract only needed rows
+        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        filtered_csv = csv_file[(csv_file['Question'] == task['question']) &
+                                (csv_file['LocationDesc'] == task['state'])]
 
         for _, row in filtered_csv.iterrows():
-            #  Take state
+            # Take state
             state = (row['StratificationCategory1'], row['Stratification1'])
 
-            #  Add new data
+            # Add new data
             if state not in states:
                 states[state] = (row['Data_Value'], 1)
-            #  Add data to existing data
+            # Add data to existing data
             else:
                 tuple1 = states[state]
                 tuple2 = (row['Data_Value'], 1)
-    
+
                 states[state] = tuple(sum(x) for x in zip(tuple1, tuple2))
-        
-        #  Take all state values and calculate the mean values
+
+        # Take all state values and calculate the mean values
         result_list = []
         for state in states:
             sum_of_values = states[state][0]
@@ -352,22 +374,22 @@ class TaskRunner(Thread):
 
             result_list.append((state, sum_of_values / nr_of_values))
 
-        #  Sort values by stratification category and stratification
+        # Sort values by stratification category and stratification
         result_list = dict(sorted(result_list, key = lambda x : (x[0][0], x[0][1])))
 
-        #  Replace tuple keys with string keys
+        # Replace tuple keys with string keys
         formatted_result = {}
         for result in result_list:
             key = '(\'' + result[0] + '\', \'' + result[1] + '\')'
             formatted_result[key] = result_list[result]
 
-        #  Create final dictionary: State name: {formatted_result}
+        # Create final dictionary: State name: {formatted_result}
         final_result = {task['state']: formatted_result}
 
-        #  Write output in result file
+        # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
             with open(filename, 'w') as file:
                 file.write(json.dumps(final_result))
-        else:
-            return result_list
+
+        return result_list

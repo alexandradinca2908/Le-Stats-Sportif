@@ -1,3 +1,5 @@
+"""This module initializes the Flask app and sets up routes."""
+
 import os
 from flask import Flask
 from app.data_ingestor import DataIngestor

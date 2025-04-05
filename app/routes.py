@@ -1,8 +1,8 @@
-from app import webserver
-from flask import request, jsonify
-
 import os
 import json
+
+from flask import request, jsonify
+from app import webserver
 
 RESULTS_PATH = 'results/'
 
@@ -20,38 +20,68 @@ def post_endpoint():
 
         # Sending back a JSON response
         return jsonify(response)
-    else:
-        # Method Not Allowed
-        return jsonify({"error": "Method not allowed"}), 405
+
+    # Method Not Allowed
+    return jsonify({"error": "Method not allowed"}), 405
 
 @webserver.route('/api/get_results/<job_id>', methods=['GET'])
 def get_response(job_id):
-    print(f"JobID is {job_id}")
-
     # Check if job_id is valid
     if int(job_id) < 1 or int(job_id) > webserver.job_counter:
         return jsonify({
             'status': 'error',
             'reason': 'Invalid job id'
             })
-    
+
     # Check if job_id is done and return the result
-    filename = RESULTS_PATH + job_id
-    if os.path.exists(filename):
+    filename = RESULTS_PATH + job_id +'.json'
+    if os.path.exists(filename) and os.path.getsize(filename) > 0:
         with open(filename, 'r') as file:
             res = json.load(file)
-        
+
         return jsonify({
             'status': 'done',
             'data': res
         })
 
     # If not, return running status
-    else:
-        return jsonify({'status': 'running'})
+    return jsonify({'status': 'running'})
+
+@webserver.route('/api/jobs', methods=['GET'])
+def jobs():
+    # For each job, check if associated file is created
+    # File exists == task done, else task is still running
+    jobs_dict = {}
+    for job in range(1, webserver.job_counter):
+        filename = RESULTS_PATH + str(job) + '.json'
+        if os.path.exists(filename):
+            jobs_dict[f'job_id_{job}'] = {'status': 'done'}
+        else:
+            jobs_dict[f'job_id_{job}'] = {'status': 'running'}
+
+    jobs_dict = dict(sorted(jobs.items()))
+
+    return jsonify({
+        'status': 'done',
+        'data': jobs
+    })
+
+@webserver.route('/api/num_jobs', methods=['GET'])
+def num_jobs():
+    # Return number of active tasks
+    return jsonify({
+        'data': webserver.thread_pool.get_active_tasks()
+    })
 
 @webserver.route('/api/states_mean', methods=['POST'])
 def states_mean_request():
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = request.json
     data['task'] = 'states_mean'
@@ -68,6 +98,13 @@ def states_mean_request():
 
 @webserver.route('/api/state_mean', methods=['POST'])
 def state_mean_request():
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = request.json
     data['task'] = 'state_mean'
@@ -84,6 +121,13 @@ def state_mean_request():
 
 @webserver.route('/api/best5', methods=['POST'])
 def best5_request():
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = request.json
     data['task'] = 'best5'
@@ -100,6 +144,13 @@ def best5_request():
 
 @webserver.route('/api/worst5', methods=['POST'])
 def worst5_request():
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = request.json
     data['task'] = 'worst5'
@@ -116,6 +167,13 @@ def worst5_request():
 
 @webserver.route('/api/global_mean', methods=['POST'])
 def global_mean_request():
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = request.json
     data['task'] = 'global_mean'
@@ -132,6 +190,13 @@ def global_mean_request():
 
 @webserver.route('/api/diff_from_mean', methods=['POST'])
 def diff_from_mean_request():
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = request.json
     data['task'] = 'diff_from_mean'
@@ -148,6 +213,13 @@ def diff_from_mean_request():
 
 @webserver.route('/api/state_diff_from_mean', methods=['POST'])
 def state_diff_from_mean_request():
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = request.json
     data['task'] = 'state_diff_from_mean'
@@ -164,6 +236,13 @@ def state_diff_from_mean_request():
 
 @webserver.route('/api/mean_by_category', methods=['POST'])
 def mean_by_category_request():
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = request.json
     data['task'] = 'mean_by_category'
@@ -180,6 +259,13 @@ def mean_by_category_request():
 
 @webserver.route('/api/state_mean_by_category', methods=['POST'])
 def state_mean_by_category_request():
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = request.json
     data['task'] = 'state_mean_by_category'
@@ -197,11 +283,18 @@ def state_mean_by_category_request():
 @webserver.route('/api/graceful_shutdown', methods=['GET'])
 def graceful_shutdown_request():
     # Get request data
-    # Register job. Don't wait for task to finish
-    # Increment job_id counter
-    # Return associated job_id
+    data = {}
+    data['task'] = 'graceful_shutdown'
+    data['job_id'] = webserver.job_counter
 
-    return jsonify({"status": "NotImplemented"})
+    # Register job. Don't wait for task to finish
+    webserver.thread_pool.submit_task(data)
+
+    # Return server status
+    if webserver.thread_pool.get_active_tasks() == 0:
+        return jsonify({'status': 'done'})
+
+    return jsonify({'status': 'running'})
 
 # You can check localhost in your browser to see what this displays
 @webserver.route('/')
