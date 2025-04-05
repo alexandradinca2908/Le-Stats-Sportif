@@ -104,9 +104,7 @@ class TaskRunner(Thread):
             elif task['task'] == 'mean_by_category':
                 self.mean_by_category(task)
             elif task['task'] == 'state_mean_by_category':
-                pass
-            elif task['task'] == 'diff_from_mean':
-                pass
+                self.state_mean_by_category(task)
 
     def states_mean(self, task, write = True):
         #  Dictionary for all states
@@ -170,6 +168,10 @@ class TaskRunner(Thread):
         nr_of_values = state[1]
 
         result = {task['state']: sum_of_values / nr_of_values}
+
+        print(sum_of_values)
+        print(nr_of_values)
+        print(result[task['state']])
 
         #  Write output in result file
         if write:
@@ -270,4 +272,102 @@ class TaskRunner(Thread):
             return state_mean
 
     def mean_by_category(self, task, write = True):
-        pass
+        #  Dictionary for all states
+        #  states[state] = (sum of values, nr of values)
+        states = {}
+
+        #  Extract only needed rows
+        csvFile = self.thread_pool.webserver.data_ingestor.csvFile
+        filtered_csv = csvFile[csvFile['Question'] == task['question']]
+
+        for _, row in filtered_csv.iterrows():
+            #  Take state
+            state = (row['LocationDesc'], row['StratificationCategory1'], 
+                    row['Stratification1'])
+
+            #  Add new data
+            if state not in states:
+                states[state] = (row['Data_Value'], 1)
+            #  Add data to existing data
+            else:
+                tuple1 = states[state]
+                tuple2 = (row['Data_Value'], 1)
+    
+                states[state] = tuple(sum(x) for x in zip(tuple1, tuple2))
+        
+        #  Take all states and calculate the mean values
+        result_list = []
+        for state in states:
+            sum_of_values = states[state][0]
+            nr_of_values = states[state][1]
+
+            result_list.append((state, sum_of_values / nr_of_values))
+
+        #  Sort values by state name, stratification category and stratification
+        result_list = dict(sorted(result_list, key = lambda x : (x[0][0], x[0][1], x[0][2])))
+
+        #  Replace tuple keys with string keys
+        final_result = {}
+        for result in result_list:
+            key = '(\'' + result[0] + '\', \'' + result[1] + '\', \'' + result[2] + '\')'
+            final_result[key] = result_list[result]
+
+        #  Write output in result file
+        if write:
+            filename = RESULTS_PATH + str(task['job_id']) + '.json'
+            with open(filename, 'w') as file:
+                file.write(json.dumps(final_result))
+        else:
+            return result_list
+        
+    def state_mean_by_category(self, task, write = True):
+        #  Dictionary for all states
+        #  states[state] = (sum of values, nr of values)
+        states = {}
+
+        #  Extract only needed rows
+        csvFile = self.thread_pool.webserver.data_ingestor.csvFile
+        filtered_csv = csvFile[(csvFile['Question'] == task['question']) &
+                                (csvFile['LocationDesc'] == task['state'])]
+
+        for _, row in filtered_csv.iterrows():
+            #  Take state
+            state = (row['StratificationCategory1'], row['Stratification1'])
+
+            #  Add new data
+            if state not in states:
+                states[state] = (row['Data_Value'], 1)
+            #  Add data to existing data
+            else:
+                tuple1 = states[state]
+                tuple2 = (row['Data_Value'], 1)
+    
+                states[state] = tuple(sum(x) for x in zip(tuple1, tuple2))
+        
+        #  Take all state values and calculate the mean values
+        result_list = []
+        for state in states:
+            sum_of_values = states[state][0]
+            nr_of_values = states[state][1]
+
+            result_list.append((state, sum_of_values / nr_of_values))
+
+        #  Sort values by stratification category and stratification
+        result_list = dict(sorted(result_list, key = lambda x : (x[0][0], x[0][1])))
+
+        #  Replace tuple keys with string keys
+        formatted_result = {}
+        for result in result_list:
+            key = '(\'' + result[0] + '\', \'' + result[1] + '\')'
+            formatted_result[key] = result_list[result]
+
+        #  Create final dictionary: State name: {formatted_result}
+        final_result = {task['state']: formatted_result}
+
+        #  Write output in result file
+        if write:
+            filename = RESULTS_PATH + str(task['job_id']) + '.json'
+            with open(filename, 'w') as file:
+                file.write(json.dumps(final_result))
+        else:
+            return result_list

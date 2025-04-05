@@ -180,13 +180,19 @@ def mean_by_category_request():
 
 @webserver.route('/api/state_mean_by_category', methods=['POST'])
 def state_mean_by_category_request():
-    # TODO
     # Get request data
-    # Register job. Don't wait for task to finish
-    # Increment job_id counter
-    # Return associated job_id
+    data = request.json
+    data['task'] = 'state_mean_by_category'
+    data['job_id'] = webserver.job_counter
 
-    return jsonify({"status": "NotImplemented"})
+    # Register job. Don't wait for task to finish
+    webserver.thread_pool.submit_task(data)
+
+    # Increment job_id counter
+    webserver.job_counter += 1
+
+    # Return associated job_id
+    return jsonify({'job_id': data['job_id']})
 
 @webserver.route('/api/graceful_shutdown', methods=['GET'])
 def graceful_shutdown_request():
