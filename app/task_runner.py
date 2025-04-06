@@ -1,3 +1,5 @@
+"""This module contains the app's thread pool and threads (TaskRunner)"""
+
 from queue import Queue
 from threading import Thread, Event, Lock, Semaphore
 import time
@@ -8,6 +10,8 @@ import json
 RESULTS_PATH = 'results/'
 
 class ThreadPool:
+    """This is the thread pool class. It stores all the sync methods and data for threads."""
+
     def __init__(self, webserver):
         # Your ThreadPool should check if an environment variable TP_NUM_OF_THREADS is defined
         # If the env var is defined, that is the number of threads to be used by the thread pool
@@ -44,35 +48,35 @@ class ThreadPool:
         self.data_ingestor_lock = Lock()
         self.active_tasks_lock = Lock()
 
-    # Notifies thread that they can start processing requests
     def set_data_ingestor(self):
+        """Notifies thread that they can start processing requests"""
         self.data_ingestor_complete.set()
 
-    # Returns active tasks
     def get_active_tasks(self):
+        """Returns active tasks"""
         with self.active_tasks_lock:
             return self.active_tasks
 
-    # Returns server status
     def get_server_status(self):
+        """Returns server status"""
         return self.server_running.is_set()
 
-    # Starts thread pool
     def start(self):
+        """Starts thread pool"""
         for i in range(self.num_of_threads):
             self.threads[i].start()
 
-    # Notifies the threads to finish by adding a stop task for each thread
     def stop(self, task):
+        """Notifies the threads to finish by adding a stop task for each thread"""
         for _ in range(self.num_of_threads):
             self.task_queue.put(task)
             self.task_barrier.release()
             self.server_running.clear()
 
-    # Add task to queue
-    # For graceful_shutdown, activate stop
-    # For normal task, notify threads and increment active tasks counter
     def submit_task(self, task):
+        """Add task to queue
+        For graceful_shutdown, activate stop
+        For normal task, notify threads and increment active tasks counter"""
         if self.server_running.is_set():
             if task['task'] == 'graceful_shutdown':
                 self.stop(task)
@@ -84,12 +88,15 @@ class ThreadPool:
                     self.active_tasks += 1
 
 class TaskRunner(Thread):
+    """This is the thread class. Each thread runs tasks from thread pool queue until told to stop."""
+
     def __init__(self, id, thread_pool):
         Thread.__init__(self)
         self.id = id
         self.thread_pool = thread_pool
 
     def run(self):
+        """Run function for a TaskRunner thread"""
         # Wait until CSV is loaded
         self.thread_pool.data_ingestor_complete.wait()
 
@@ -104,7 +111,7 @@ class TaskRunner(Thread):
             # Repeat until graceful_shutdown
             if task['task'] == 'graceful_shutdown':
                 break
-            
+
             if task['task'] == 'states_mean':
                 self.states_mean(task)
             elif task['task'] == 'state_mean':
@@ -129,6 +136,7 @@ class TaskRunner(Thread):
                 self.thread_pool.active_tasks -= 1
 
     def states_mean(self, task, write = True):
+        """Executes states mean request"""
         # Dictionary for all states
         # states[state] = (sum of values, nr of values)
         states = {}
@@ -165,12 +173,13 @@ class TaskRunner(Thread):
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
-            with open(filename, 'w') as file:
+            with open(filename, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(result_list))
-            
+
         return result_list
 
     def state_mean(self, task, write = True):
+        """Executes state mean request"""
         # Extract only needed rows
         csv_file = self.thread_pool.webserver.data_ingestor.csv_file
         filtered_csv = csv_file[(csv_file['Question'] == task['question']) &
@@ -198,44 +207,63 @@ class TaskRunner(Thread):
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
-            with open(filename, 'w') as file:
+            with open(filename, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(result))
-            
+
         return result
 
     def best5(self, task, write = True):
+        """Executes best5 request"""
         # Generate all results
         full_result = self.states_mean(task, write = False)
 
-        # Extract first 5
-        best5 = {k: full_result[k] for k in list(full_result)[:5]}
+        # Extract data ingestor
+        data_ingestor = self.thread_pool.webserver.data_ingestor
+
+        # Extract best 5
+        best5 = {}
+        if task['question'] in data_ingestor.questions_best_is_min:
+            best5 = {k: full_result[k] for k in list(full_result)[:5]}
+        else:
+            start = len(full_result) - 6
+            end = len(full_result)
+            best5 = {k: full_result[k] for k in list(full_result)[end:start:-1]}
 
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
-            with open(filename, 'w') as file:
+            with open(filename, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(best5))
 
         return best5
 
     def worst5(self, task, write = True):
+        """Executes worst5 request"""
         # Generate all results
         full_result = self.states_mean(task, write = False)
 
-        # Extract last 5
-        start = len(full_result) - 6
-        end = len(full_result)
-        worst5 = {k: full_result[k] for k in list(full_result)[end:start:-1]}
+        # Extract data ingestor
+        data_ingestor = self.thread_pool.webserver.data_ingestor
+
+        # Extract worst 5
+        worst5 = {}
+        if task['question'] in data_ingestor.questions_best_is_max:
+            worst5 = {k: full_result[k] for k in list(full_result)[:5]}
+        else:
+            start = len(full_result) - 6
+            end = len(full_result)
+            worst5 = {k: full_result[k] for k in list(full_result)[end:start:-1]}
 
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
-            with open(filename, 'w') as file:
+            with open(filename, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(worst5))
 
         return worst5
 
     def global_mean(self, task, write = True):
+        """Executes global mean request"""
         # Extract only needed rows
         csv_file = self.thread_pool.webserver.data_ingestor.csv_file
         filtered_csv = csv_file[csv_file['Question'] == task['question']]
@@ -258,12 +286,13 @@ class TaskRunner(Thread):
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
-            with open(filename, 'w') as file:
+            with open(filename, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(result))
 
         return result
 
     def diff_from_mean(self, task, write = True):
+        """Executes diff_from_mean request"""
         states_mean = self.states_mean(task, write = False)
         global_mean = self.global_mean(task, write = False)['global_mean']
 
@@ -273,12 +302,13 @@ class TaskRunner(Thread):
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
-            with open(filename, 'w') as file:
+            with open(filename, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(states_mean))
 
         return states_mean
 
     def state_diff_from_mean(self, task, write = True):
+        """Executes state_diff_from_mean request"""
         state_mean = self.state_mean(task, write = False)
         global_mean = self.global_mean(task, write = False)['global_mean']
         state = task['state']
@@ -288,19 +318,22 @@ class TaskRunner(Thread):
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
-            with open(filename, 'w') as file:
+            with open(filename, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(state_mean))
-            
+
         return state_mean
 
     def mean_by_category(self, task, write = True):
+        """Executes mean_by_category request"""
         # Dictionary for all states
         # states[state] = (sum of values, nr of values)
         states = {}
 
         # Extract only needed rows
         csv_file = self.thread_pool.webserver.data_ingestor.csv_file
-        filtered_csv = csv_file[csv_file['Question'] == task['question']]
+        filtered_csv = csv_file[(csv_file['Question'] == task['question']) &
+                                (csv_file['StratificationCategory1'].notna()) &
+                                (csv_file['Stratification1'].notna())]
 
         for _, row in filtered_csv.iterrows():
             # Take state
@@ -326,23 +359,25 @@ class TaskRunner(Thread):
             result_list.append((state, sum_of_values / nr_of_values))
 
         # Sort values by state name, stratification category and stratification
-        result_list = dict(sorted(result_list, key = lambda x : (x[0][0], x[0][1], x[0][2])))
+        result_list = dict(sorted(result_list,
+                                  key = lambda x : (str(x[0][0]), str(x[0][1]), str(x[0][2]))))
 
         # Replace tuple keys with string keys
         final_result = {}
         for result in result_list:
-            key = '(\'' + result[0] + '\', \'' + result[1] + '\', \'' + result[2] + '\')'
+            key = '(\'' + str(result[0]) + '\', \'' + str(result[1]) + '\', \'' + str(result[2]) + '\')'
             final_result[key] = result_list[result]
 
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
-            with open(filename, 'w') as file:
+            with open(filename, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(final_result))
 
         return result_list
 
     def state_mean_by_category(self, task, write = True):
+        """Executes state_mean_by_category request"""
         # Dictionary for all states
         # states[state] = (sum of values, nr of values)
         states = {}
@@ -350,7 +385,9 @@ class TaskRunner(Thread):
         # Extract only needed rows
         csv_file = self.thread_pool.webserver.data_ingestor.csv_file
         filtered_csv = csv_file[(csv_file['Question'] == task['question']) &
-                                (csv_file['LocationDesc'] == task['state'])]
+                                (csv_file['LocationDesc'] == task['state']) &
+                                (csv_file['StratificationCategory1'].notna()) &
+                                (csv_file['Stratification1'].notna())]
 
         for _, row in filtered_csv.iterrows():
             # Take state
@@ -375,12 +412,12 @@ class TaskRunner(Thread):
             result_list.append((state, sum_of_values / nr_of_values))
 
         # Sort values by stratification category and stratification
-        result_list = dict(sorted(result_list, key = lambda x : (x[0][0], x[0][1])))
+        result_list = dict(sorted(result_list, key = lambda x : (str(x[0][0]), str(x[0][1]))))
 
         # Replace tuple keys with string keys
         formatted_result = {}
         for result in result_list:
-            key = '(\'' + result[0] + '\', \'' + result[1] + '\')'
+            key = '(\'' + str(result[0]) + '\', \'' + str(result[1]) + '\')'
             formatted_result[key] = result_list[result]
 
         # Create final dictionary: State name: {formatted_result}
@@ -389,7 +426,7 @@ class TaskRunner(Thread):
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
-            with open(filename, 'w') as file:
+            with open(filename, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(final_result))
 
         return result_list

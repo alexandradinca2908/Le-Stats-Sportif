@@ -1,6 +1,10 @@
+"""This module contains the app's data ingestor, which stores the server's CSV file and sorts questions."""
+
 import pandas
 
 class DataIngestor:
+    """Data Ingestor reads from CSV and stores server the data that will be queried"""
+
     def __init__(self, csv_path: str):
         #  Read csv from csv_path
         self.csv_file = pandas.read_csv(csv_path)
