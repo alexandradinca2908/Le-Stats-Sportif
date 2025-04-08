@@ -135,14 +135,16 @@ class TaskRunner(Thread):
             with self.thread_pool.active_tasks_lock:
                 self.thread_pool.active_tasks -= 1
 
-    def states_mean(self, task, write = True):
+    def states_mean(self, task, write = True, csv_file = None):
         """Executes states mean request"""
         # Dictionary for all states
         # states[state] = (sum of values, nr of values)
         states = {}
 
         # Extract only needed rows
-        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        if csv_file is None:
+            csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+
         filtered_csv = csv_file[csv_file['Question'] == task['question']]
 
         for _, row in filtered_csv.iterrows():
@@ -178,10 +180,12 @@ class TaskRunner(Thread):
 
         return result_list
 
-    def state_mean(self, task, write = True):
+    def state_mean(self, task, write = True, csv_file = None):
         """Executes state mean request"""
         # Extract only needed rows
-        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        if csv_file is None:
+            csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+
         filtered_csv = csv_file[(csv_file['Question'] == task['question']) &
                                (csv_file['LocationDesc'] == task['state'])]
 
@@ -208,22 +212,21 @@ class TaskRunner(Thread):
 
         return result
 
-    def best5(self, task, write = True):
+    def best5(self, task, write = True, data_ingestor = None):
         """Executes best5 request"""
-        # Generate all results
-        full_result = self.states_mean(task, write = False)
-
         # Extract data ingestor
-        data_ingestor = self.thread_pool.webserver.data_ingestor
+        if data_ingestor is None:
+            data_ingestor = self.thread_pool.webserver.data_ingestor
+
+        # Generate all results
+        full_result = self.states_mean(task, write = False, csv_file = data_ingestor.csv_file)
 
         # Extract best 5
         best5 = {}
         if task['question'] in data_ingestor.questions_best_is_min:
             best5 = {k: full_result[k] for k in list(full_result)[:5]}
         else:
-            start = len(full_result) - 6
-            end = len(full_result)
-            best5 = {k: full_result[k] for k in list(full_result)[end:start:-1]}
+            best5 = {k: full_result[k] for k in list(full_result)[-5:]}
 
         # Write output in result file
         if write:
@@ -233,22 +236,21 @@ class TaskRunner(Thread):
 
         return best5
 
-    def worst5(self, task, write = True):
+    def worst5(self, task, write = True, data_ingestor = None):
         """Executes worst5 request"""
-        # Generate all results
-        full_result = self.states_mean(task, write = False)
-
         # Extract data ingestor
-        data_ingestor = self.thread_pool.webserver.data_ingestor
+        if data_ingestor is None:
+            data_ingestor = self.thread_pool.webserver.data_ingestor
+
+        # Generate all results
+        full_result = self.states_mean(task, write = False, csv_file = data_ingestor.csv_file)
 
         # Extract worst 5
         worst5 = {}
         if task['question'] in data_ingestor.questions_best_is_max:
             worst5 = {k: full_result[k] for k in list(full_result)[:5]}
         else:
-            start = len(full_result) - 6
-            end = len(full_result)
-            worst5 = {k: full_result[k] for k in list(full_result)[end:start:-1]}
+            worst5 = {k: full_result[k] for k in list(full_result)[-5:]}
 
         # Write output in result file
         if write:
@@ -258,10 +260,12 @@ class TaskRunner(Thread):
 
         return worst5
 
-    def global_mean(self, task, write = True):
+    def global_mean(self, task, write = True, csv_file = None):
         """Executes global mean request"""
         # Extract only needed rows
-        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        if csv_file is None:
+            csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+
         filtered_csv = csv_file[csv_file['Question'] == task['question']]
 
         values = (0, 0)
@@ -287,10 +291,10 @@ class TaskRunner(Thread):
 
         return result
 
-    def diff_from_mean(self, task, write = True):
+    def diff_from_mean(self, task, write = True, csv_file = None):
         """Executes diff_from_mean request"""
-        states_mean = self.states_mean(task, write = False)
-        global_mean = self.global_mean(task, write = False)['global_mean']
+        states_mean = self.states_mean(task, write = False, csv_file = csv_file)
+        global_mean = self.global_mean(task, write = False, csv_file = csv_file)['global_mean']
 
         for state in states_mean:
             states_mean[state] = global_mean - states_mean[state]
@@ -303,10 +307,10 @@ class TaskRunner(Thread):
 
         return states_mean
 
-    def state_diff_from_mean(self, task, write = True):
+    def state_diff_from_mean(self, task, write = True, csv_file = None):
         """Executes state_diff_from_mean request"""
-        state_mean = self.state_mean(task, write = False)
-        global_mean = self.global_mean(task, write = False)['global_mean']
+        state_mean = self.state_mean(task, write = False, csv_file = csv_file)
+        global_mean = self.global_mean(task, write = False, csv_file = csv_file)['global_mean']
         state = task['state']
 
         state_mean[state] = global_mean - state_mean[state]
@@ -319,14 +323,16 @@ class TaskRunner(Thread):
 
         return state_mean
 
-    def mean_by_category(self, task, write = True):
+    def mean_by_category(self, task, write = True, csv_file = None):
         """Executes mean_by_category request"""
         # Dictionary for all states
         # states[state] = (sum of values, nr of values)
         states = {}
 
         # Extract only needed rows
-        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        if csv_file is None:
+            csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+
         filtered_csv = csv_file[(csv_file['Question'] == task['question']) &
                                 (csv_file['StratificationCategory1'].notna()) &
                                 (csv_file['Stratification1'].notna())]
@@ -372,14 +378,16 @@ class TaskRunner(Thread):
 
         return result_list
 
-    def state_mean_by_category(self, task, write = True):
+    def state_mean_by_category(self, task, write = True, csv_file = None):
         """Executes state_mean_by_category request"""
         # Dictionary for all states
         # states[state] = (sum of values, nr of values)
         states = {}
 
         # Extract only needed rows
-        csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+        if csv_file is None:
+            csv_file = self.thread_pool.webserver.data_ingestor.csv_file
+
         filtered_csv = csv_file[(csv_file['Question'] == task['question']) &
                                 (csv_file['LocationDesc'] == task['state']) &
                                 (csv_file['StratificationCategory1'].notna()) &
