@@ -30,8 +30,15 @@ def post_endpoint():
 def get_response(job_id):
     """Retrieve results for specified job id"""
 
+    # Notify logger
+    webserver.logger.info("get_results request received by server")
+
     # Check if job_id is valid
     if int(job_id) < 1 or int(job_id) > webserver.job_counter:
+        # Notify logger
+        webserver.logger.info("get_results request failed with invalid job id %s",
+                              job_id)
+
         return jsonify({
             'status': 'error',
             'reason': 'Invalid job id'
@@ -43,17 +50,25 @@ def get_response(job_id):
         with open(filename, 'r', encoding='utf-8') as file:
             res = json.load(file)
 
+        # Notify logger
+        webserver.logger.info("get_results request completed for job_%s",
+                              job_id)
+
         return jsonify({
             'status': 'done',
             'data': res
         })
 
-    # If not, return running status
+    # If not, notify logger and return running status
+    webserver.logger.info("get_results request still running")
     return jsonify({'status': 'running'})
 
 @webserver.route('/api/jobs', methods=['GET'])
 def jobs():
     """Return status for all jobs"""
+
+    # Notify logger
+    webserver.logger.info("jobs request received by server")
 
     # For each job, check if associated file is created
     # File exists == task done, else task is still running
@@ -76,6 +91,9 @@ def jobs():
 def num_jobs():
     """Return number of active tasks"""
 
+    # Notify logger
+    webserver.logger.info("num_jobs request received by server")
+
     return jsonify({
         'data': webserver.thread_pool.get_active_tasks()
     })
@@ -86,6 +104,9 @@ def states_mean_request():
 
     # If server is stopped, return error
     if not webserver.thread_pool.get_server_status():
+        # Notify logger
+        webserver.logger.info("states_mean request received but server has stopped")
+
         return jsonify({
             'status': 'error',
             'reason': 'shutting down'
@@ -96,8 +117,15 @@ def states_mean_request():
     data['task'] = 'states_mean'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("states_mean request received with question %s",
+                           data['question'])
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
+
+    # Notify logger
+    webserver.logger.info("states_mean request sent to task queue for job_%d", data['job_id'])
 
     # Increment job_id counter
     webserver.job_counter += 1
@@ -111,6 +139,8 @@ def state_mean_request():
 
     # If server is stopped, return error
     if not webserver.thread_pool.get_server_status():
+        webserver.logger.info("state_mean request received but server has stopped")
+
         return jsonify({
             'status': 'error',
             'reason': 'shutting down'
@@ -121,8 +151,15 @@ def state_mean_request():
     data['task'] = 'state_mean'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("state_mean request received with question %s for state %s",
+                           data['question'], data['state'])
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
+
+    # Notify logger
+    webserver.logger.info("state_mean request sent to task queue for job_%d", data['job_id'])
 
     # Increment job_id counter
     webserver.job_counter += 1
@@ -136,6 +173,9 @@ def best5_request():
 
     # If server is stopped, return error
     if not webserver.thread_pool.get_server_status():
+        # Notify logger
+        webserver.logger.info("best5 request received but server has stopped")
+
         return jsonify({
             'status': 'error',
             'reason': 'shutting down'
@@ -146,8 +186,14 @@ def best5_request():
     data['task'] = 'best5'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("best5 request received with question %s", data['question'])
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
+
+    # Notify logger
+    webserver.logger.info("best5 request sent to task queue for job_%d", data['job_id'])
 
     # Increment job_id counter
     webserver.job_counter += 1
@@ -161,6 +207,9 @@ def worst5_request():
 
     # If server is stopped, return error
     if not webserver.thread_pool.get_server_status():
+        # Notify logger
+        webserver.logger.info("worst5 request received but server has stopped")
+
         return jsonify({
             'status': 'error',
             'reason': 'shutting down'
@@ -171,8 +220,14 @@ def worst5_request():
     data['task'] = 'worst5'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("worst5 request received with question %s", data['question'])
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
+
+    # Notify logger
+    webserver.logger.info("worst5 request sent to task queue for job_%d", data['job_id'])
 
     # Increment job_id counter
     webserver.job_counter += 1
@@ -186,6 +241,9 @@ def global_mean_request():
 
     # If server is stopped, return error
     if not webserver.thread_pool.get_server_status():
+        # Notify logger
+        webserver.logger.info("global_mean request received but server has stopped")
+
         return jsonify({
             'status': 'error',
             'reason': 'shutting down'
@@ -196,8 +254,14 @@ def global_mean_request():
     data['task'] = 'global_mean'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("global_mean request received with question %s", data['question'])
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
+
+    # Notify logger
+    webserver.logger.info("global_mean request sent to task queue for job_%d", data['job_id'])
 
     # Increment job_id counter
     webserver.job_counter += 1
@@ -211,6 +275,9 @@ def diff_from_mean_request():
 
     # If server is stopped, return error
     if not webserver.thread_pool.get_server_status():
+        # Notify logger
+        webserver.logger.info("diff_from_mean request received but server has stopped")
+
         return jsonify({
             'status': 'error',
             'reason': 'shutting down'
@@ -221,8 +288,14 @@ def diff_from_mean_request():
     data['task'] = 'diff_from_mean'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("diff_from_mean request received with question %s", data['question'])
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
+
+    # Notify logger
+    webserver.logger.info("diff_from_mean request sent to task queue for job_%d", data['job_id'])
 
     # Increment job_id counter
     webserver.job_counter += 1
@@ -236,6 +309,9 @@ def state_diff_from_mean_request():
 
     # If server is stopped, return error
     if not webserver.thread_pool.get_server_status():
+        # Notify logger
+        webserver.logger.info("state_diff_from_mean request received but server has stopped")
+
         return jsonify({
             'status': 'error',
             'reason': 'shutting down'
@@ -246,8 +322,16 @@ def state_diff_from_mean_request():
     data['task'] = 'state_diff_from_mean'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("state_diff_from_mean request received with question %s for state %s",
+                           data['question'], data['state'])
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
+
+    # Notify logger
+    webserver.logger.info("state_diff_from_mean request sent to task queue for job_%d",
+                          data['job_id'])
 
     # Increment job_id counter
     webserver.job_counter += 1
@@ -261,6 +345,9 @@ def mean_by_category_request():
 
     # If server is stopped, return error
     if not webserver.thread_pool.get_server_status():
+        # Notify logger
+        webserver.logger.info("mean_by_category request received but server has stopped")
+
         return jsonify({
             'status': 'error',
             'reason': 'shutting down'
@@ -271,8 +358,15 @@ def mean_by_category_request():
     data['task'] = 'mean_by_category'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("mean_by_category request received with question %s", data['question'])
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
+
+    # Notify logger
+    webserver.logger.info("mean_by_category request sent to task queue for job_%d",
+                          data['job_id'])
 
     # Increment job_id counter
     webserver.job_counter += 1
@@ -286,6 +380,9 @@ def state_mean_by_category_request():
 
     # If server is stopped, return error
     if not webserver.thread_pool.get_server_status():
+        # Notify logger
+        webserver.logger.info("state_mean_by_category request received but server has stopped")
+
         return jsonify({
             'status': 'error',
             'reason': 'shutting down'
@@ -296,8 +393,16 @@ def state_mean_by_category_request():
     data['task'] = 'state_mean_by_category'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("state_mean_by_category request received with question %s for state %s",
+                           data['question'], data['state'])
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
+
+    # Notify logger
+    webserver.logger.info("state_mean_by_category request sent to task queue for job_%d",
+                          data['job_id'])
 
     # Increment job_id counter
     webserver.job_counter += 1
@@ -309,18 +414,37 @@ def state_mean_by_category_request():
 def graceful_shutdown_request():
     """Send graceful_shutdown request to threadpool"""
 
+    # If server is stopped, return error
+    if not webserver.thread_pool.get_server_status():
+        # Notify logger
+        webserver.logger.info("graceful_shutdown request received but server has stopped")
+
+        return jsonify({
+            'status': 'error',
+            'reason': 'shutting down'
+        })
+
     # Get request data
     data = {}
     data['task'] = 'graceful_shutdown'
     data['job_id'] = webserver.job_counter
 
+    # Notify logger
+    webserver.logger.info("graceful_shutdown request received by server")
+
     # Register job. Don't wait for task to finish
     webserver.thread_pool.submit_task(data)
 
-    # Return server status
+    # Notify logger
+    webserver.logger.info("graceful_shutdown request sent to task queue for job_%d",
+                          data['job_id'])
+
+    # Notify logger and return server status
     if webserver.thread_pool.get_active_tasks() == 0:
+        webserver.logger.info("server status after graceful_shutdown: done")
         return jsonify({'status': 'done'})
 
+    webserver.logger.info("server status after graceful_shutdown: running")
     return jsonify({'status': 'running'})
 
 @webserver.route('/')

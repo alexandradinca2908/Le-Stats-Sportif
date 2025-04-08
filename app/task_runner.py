@@ -200,10 +200,6 @@ class TaskRunner(Thread):
 
         result = {task['state']: sum_of_values / nr_of_values}
 
-        print(sum_of_values)
-        print(nr_of_values)
-        print(result[task['state']])
-
         # Write output in result file
         if write:
             filename = RESULTS_PATH + str(task['job_id']) + '.json'
