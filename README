@@ -1,0 +1,65 @@
+Name: Dincă Alexandra Cristina
+Grupa: 334CD
+
+Le Stats Sportif: Python server that handles GET/POST requests based on a given CSV file, regarding
+nutrition activity in USA.
+
+Structure:
+    DESCRIPTION: 
+        Server relies on three main data structures to process information:
+            DataIngestor: stores the CSV file as pandas dataframe, making it easier to filter and  
+                query rows
+            ThreadPool: handles synchronization between server threads and keeps all data and sync     
+                variables in one place; it also manages the task queue until server shuts down
+            TaskRunner: represents a server thread; executes given job from queue until it is signaled 
+                to exit
+
+    SERVER FLOW:
+        init.py: initializes the flask app and sets up the routes
+        routes.py: keeps track of server requests; it has a function for each request route to handle 
+            user input; most routes just generate jobs which are submitted to the threadpool and later handled by a TaskRunner, but there are a few that give a response on the spot (get_results, jobs, num_jobs); all route functions return a JSON to confirm job submisson and update the logger responsible for server history
+        data_ingestor.py: contains DataIngestor class
+        task_runner.py: contains ThreadPool and TaskRunner classes; in TaskRunner, there is the full
+            implementation of all job handling posibilities, modularised in separate functions
+
+    REQUESTS:
+        states_mean, state_mean = calculates the average answer percentage to a question for all 
+            states or just one
+        best5, worst5 = uses states_mean results and returns first/last 5 results depending on the 
+            question
+        global_mean = calculates the average answer to a question for the entire dataset
+        diff_from_mean = global_mean - states_mean for each state
+        state_diff_from_mean = global_mean - state_mean for a certain state
+        mean_by_category, state_mean_by_category = calculates the average answer percentage to a 
+            question for all states or just one, grouping them by a certain stratification category
+            and stratification value (eg. Age (years), 35-45)
+        graceful_shutdown = signals the server to stop; thread pool alerts task runners by inserting
+            a shut down task in the queue for each one of them
+        jobs = returns the status of all past and current jobs
+        num_jobs = returns the number of active jobs
+        get_results/id = returns the results of job_id
+
+    ASSIGNMENT EVALUATION:
+        This assignment is great practice because it combines multithreaded development with network
+        knowledge. With the help of the flask module, I was able to learn how to manage and organize tasks in a RESTful API application, optimized by parallel processing. Therefore I find this project useful as a learning tool and as a foundation for larger ideas.
+
+    IMPLEMENTATION EVALUATION:
+        I believe my implementation is almost optimal. Firstly, I focused on modularisation and making sure the code is readable and reusable. I took advantage of the one-to-many association relationship between the ThreadPool and TaskRunners in order to pack everything tightly and make sure necessary data is available in one place. Secondly, the parallelization of the task management is efficient; it uses a synchronized queue to share jobs evenly, only one lock (which doesn't add much overhead), a few events for their atomic flag properties and lastly a semaphore, to have better control over thread distribution and reduce the risk of missed alerts (in this scenario, .notify() would have failed if all threads were busy and the threadpool wanted to inform them of available tasks)
+        There is place for improvement though. For example, I believe I could have taken better advantage of the pandas module regarding CSV processing and dataframes to improve time efficiency even more.
+
+Implementation:
+    The entire task has been implemented (requests + logging + unittesting). No extras added.
+    The main difficulty of this assignment came from properly parsing and formatting the JSONs.
+    It was really interesting to work with flask and pandas, and I enjoy the fact that I was able to 
+        learn something new aside from the main scope of the homework (concurrency in python). Also the logging and unittesting modules were fun to experiment with.
+
+Resources:
+    https://ocw.cs.pub.ro/courses/asc/laboratoare/03
+    https://www.w3schools.com/python/pandas/pandas_dataframes.asp
+    https://docs.python.org/3/library/logging.html
+    https://docs.python.org/3/library/unittest.html
+    https://stackoverflow.com/questions/18837262/convert-python-dict-into-a-dataframe
+    https://docs.python.org/3/library/logging.handlers.html#logging.handlers.RotatingFileHandler
+
+Git:
+    https://github.com/alexandradinca2908/Le-Stats-Sportif.git

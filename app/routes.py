@@ -95,7 +95,7 @@ def num_jobs():
     webserver.logger.info("num_jobs request received by server")
 
     return jsonify({
-        'data': webserver.thread_pool.get_active_tasks()
+        'num_jobs': webserver.thread_pool.get_active_tasks()
     })
 
 @webserver.route('/api/states_mean', methods=['POST'])

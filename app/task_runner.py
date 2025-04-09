@@ -40,12 +40,10 @@ class ThreadPool:
         self.server_running = Event()
         self.server_running.set()
 
-        # Semaphore
+        # Semaphores
         self.task_barrier = Semaphore(0)
 
         # Locks
-        self.task_queue_lock = Lock()
-        self.data_ingestor_lock = Lock()
         self.active_tasks_lock = Lock()
 
     def set_data_ingestor(self):
